@@ -6,10 +6,8 @@
 #include "AP_HAL_SITL_Namespace.h"
 #include "HAL_SITL_Class.h"
 #include "UARTDriver.h"
-#include <stdio.h>
-#include <signal.h>
-#include <unistd.h>
 #include <AP_HAL/utility/getopt_cpp.h>
+#include <AP_Logger/AP_Logger_SITL.h>
 
 #include <SITL/SIM_Multicopter.h>
 #include <SITL/SIM_Helicopter.h>
@@ -17,6 +15,8 @@
 #include <SITL/SIM_Plane.h>
 #include <SITL/SIM_QuadPlane.h>
 #include <SITL/SIM_Rover.h>
+#include <SITL/SIM_BalanceBot.h>
+#include <SITL/SIM_Sailboat.h>
 #include <SITL/SIM_CRRCSim.h>
 #include <SITL/SIM_Gazebo.h>
 #include <SITL/SIM_last_letter.h>
@@ -27,6 +27,11 @@
 #include <SITL/SIM_Calibration.h>
 #include <SITL/SIM_XPlane.h>
 #include <SITL/SIM_Submarine.h>
+#include <SITL/SIM_SilentWings.h>
+#include <SITL/SIM_Morse.h>
+
+#include <signal.h>
+#include <stdio.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -37,6 +42,15 @@ using namespace SITL;
 static void _sig_fpe(int signum)
 {
     fprintf(stderr, "ERROR: Floating point exception - aborting\n");
+    AP_HAL::dump_stack_trace();
+    abort();
+}
+
+// catch segfault
+static void _sig_segv(int signum)
+{
+    fprintf(stderr, "ERROR: segmentation fault - aborting\n");
+    AP_HAL::dump_stack_trace();
     abort();
 }
 
@@ -44,7 +58,7 @@ void SITL_State::_usage(void)
 {
     printf("Options:\n"
            "\t--help|-h                display this help information\n"
-           "\t--wipe|-w                wipe eeprom and dataflash\n"
+           "\t--wipe|-w                wipe eeprom\n"
            "\t--unhide-groups|-u       parameter enumeration ignores AP_PARAM_FLAG_ENABLE\n"
            "\t--speedup|-s SPEEDUP     set simulation speedup\n"
            "\t--rate|-r RATE           set SITL framerate\n"
@@ -54,10 +68,9 @@ void SITL_State::_usage(void)
            "\t--synthetic-clock|-S     set synthetic clock mode\n"
            "\t--home|-O HOME           set home location (lat,lng,alt,yaw)\n"
            "\t--model|-M MODEL         set simulation model\n"
-           "\t--fdm|-F ADDRESS         set FDM address, defaults to 127.0.0.1\n"
-           // "\t--client ADDRESS        TCP address to connect uartC to\n"  NOT USED
-           "\t--gimbal                 enable simulated MAVLink gimbal\n"
+           "\t--fg|-F ADDRESS          set Flight Gear view address, defaults to 127.0.0.1\n"
            "\t--disable-fgview         disable Flight Gear view\n"
+           "\t--gimbal                 enable simulated MAVLink gimbal\n"
            "\t--autotest-dir DIR       set directory for additional files\n"
            "\t--defaults path          set path to defaults file\n"
            "\t--uartA device           set device string for UARTA\n"
@@ -65,11 +78,11 @@ void SITL_State::_usage(void)
            "\t--uartC device           set device string for UARTC\n"
            "\t--uartD device           set device string for UARTD\n"
            "\t--uartE device           set device string for UARTE\n"
-           "\t--uartF device           set device string for UARTE\n"
+           "\t--uartF device           set device string for UARTF\n"
+           "\t--uartG device           set device string for UARTG\n"
            "\t--rtscts                 enable rtscts on serial ports (default false)\n"
            "\t--base-port PORT         set port num for base port(default 5670) must be before -I option\n"
            "\t--rc-in-port PORT        set port num for rc in\n"
-           "\t--rc-out-port PORT       set port num for rc out\n"
            "\t--sim-address ADDR       set address string for simulator\n"
            "\t--sim-port-in PORT       set port num for simulator in\n"
            "\t--sim-port-out PORT      set port num for simulator out\n"
@@ -88,6 +101,9 @@ static const struct {
     { "quad",               MultiCopter::create },
     { "copter",             MultiCopter::create },
     { "x",                  MultiCopter::create },
+    { "bfx",                MultiCopter::create },
+    { "djix",               MultiCopter::create },
+    { "cwx",                MultiCopter::create },
     { "hexa",               MultiCopter::create },
     { "octa",               MultiCopter::create },
     { "dodeca-hexa",        MultiCopter::create },
@@ -99,6 +115,8 @@ static const struct {
     { "singlecopter",       SingleCopter::create },
     { "coaxcopter",         SingleCopter::create },
     { "rover",              SimRover::create },
+    { "balancebot",         BalanceBot::create },
+    { "sailboat",           Sailboat::create },
     { "crrcsim",            CRRCSim::create },
     { "jsbsim",             JSBSim::create },
     { "flightaxis",         FlightAxis::create },
@@ -109,21 +127,27 @@ static const struct {
     { "plane",              Plane::create },
     { "calibration",        Calibration::create },
     { "vectored",           Submarine::create },
+    { "silentwings",        SilentWings::create },
+    { "morse",              Morse::create },
 };
 
 void SITL_State::_set_signal_handlers(void) const
 {
     struct sigaction sa_fpe = {};
-
     sigemptyset(&sa_fpe.sa_mask);
     sa_fpe.sa_handler = _sig_fpe;
     sigaction(SIGFPE, &sa_fpe, nullptr);
 
     struct sigaction sa_pipe = {};
-
     sigemptyset(&sa_pipe.sa_mask);
     sa_pipe.sa_handler = SIG_IGN; /* No-op SIGPIPE handler */
     sigaction(SIGPIPE, &sa_pipe, nullptr);
+
+    struct sigaction sa_segv = {};
+    sigemptyset(&sa_segv.sa_mask);
+    sa_segv.sa_handler = _sig_segv;
+    sigaction(SIGSEGV, &sa_segv, nullptr);
+
 }
 
 void SITL_State::_parse_command_line(int argc, char * const argv[])
@@ -135,31 +159,27 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
     // default to CMAC
     const char *home_str = "-35.363261,149.165230,584,353";
     const char *model_str = nullptr;
-    _client_address = nullptr;
     _use_fg_view = true;
     char *autotest_dir = nullptr;
-    _fdm_address = "127.0.0.1";
+    _fg_address = "127.0.0.1";
 
     const int BASE_PORT = 5760;
     const int RCIN_PORT = 5501;
-    const int RCOUT_PORT = 5502;
     const int FG_VIEW_PORT = 5503;
     _base_port = BASE_PORT;
     _rcin_port = RCIN_PORT;
-    _rcout_port = RCOUT_PORT;
     _fg_view_port = FG_VIEW_PORT;
 
     const int SIM_IN_PORT = 9003;
     const int SIM_OUT_PORT = 9002;
     const int IRLOCK_PORT = 9005;
-    const char * _simulator_address = "127.0.0.1";
-    uint16_t _simulator_port_in = SIM_IN_PORT;
-    uint16_t _simulator_port_out = SIM_OUT_PORT;
+    const char * simulator_address = "127.0.0.1";
+    uint16_t simulator_port_in = SIM_IN_PORT;
+    uint16_t simulator_port_out = SIM_OUT_PORT;
     _irlock_port = IRLOCK_PORT;
 
     enum long_options {
-        CMDLINE_CLIENT = 0,
-        CMDLINE_GIMBAL,
+        CMDLINE_GIMBAL = 1,
         CMDLINE_FGVIEW,
         CMDLINE_AUTOTESTDIR,
         CMDLINE_DEFAULTS,
@@ -169,11 +189,11 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         CMDLINE_UARTD,
         CMDLINE_UARTE,
         CMDLINE_UARTF,
+        CMDLINE_UARTG,
         CMDLINE_RTSCTS,
         CMDLINE_BASE_PORT,
         CMDLINE_RCIN_PORT,
-        CMDLINE_RCOUT_PORT,
-        CMDLINE_SIM_ADDRESS,
+        CMDLINE_SIM_ADDRESS = 15,
         CMDLINE_SIM_PORT_IN,
         CMDLINE_SIM_PORT_OUT,
         CMDLINE_IRLOCK_PORT,
@@ -191,8 +211,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         {"synthetic-clock", false,  0, 'S'},
         {"home",            true,   0, 'O'},
         {"model",           true,   0, 'M'},
-        {"fdm",             false,  0, 'F'},
-        {"client",          true,   0, CMDLINE_CLIENT},
+        {"fg",              true,   0, 'F'},
         {"gimbal",          false,  0, CMDLINE_GIMBAL},
         {"disable-fgview",  false,  0, CMDLINE_FGVIEW},
         {"autotest-dir",    true,   0, CMDLINE_AUTOTESTDIR},
@@ -203,10 +222,10 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         {"uartD",           true,   0, CMDLINE_UARTD},
         {"uartE",           true,   0, CMDLINE_UARTE},
         {"uartF",           true,   0, CMDLINE_UARTF},
+        {"uartG",           true,   0, CMDLINE_UARTG},
         {"rtscts",          false,  0, CMDLINE_RTSCTS},
         {"base-port",       true,   0, CMDLINE_BASE_PORT},
         {"rc-in-port",      true,   0, CMDLINE_RCIN_PORT},
-        {"rc-out-port",     true,   0, CMDLINE_RCOUT_PORT},
         {"sim-address",     true,   0, CMDLINE_SIM_ADDRESS},
         {"sim-port-in",     true,   0, CMDLINE_SIM_PORT_IN},
         {"sim-port-out",    true,   0, CMDLINE_SIM_PORT_OUT},
@@ -229,13 +248,16 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         switch (opt) {
         case 'w':
             AP_Param::erase_all();
-            unlink("dataflash.bin");
+            unlink(AP_Logger_SITL::filename);
             break;
         case 'u':
             AP_Param::set_hide_disabled_groups(false);
             break;
         case 's':
             speedup = strtof(gopt.optarg, nullptr);
+            char speedup_string[18];
+            snprintf(speedup_string, sizeof(speedup_string), "SIM_SPEEDUP=%s", gopt.optarg);
+            _set_param_default(speedup_string);
             break;
         case 'r':
             _framerate = (unsigned)atoi(gopt.optarg);
@@ -248,20 +270,17 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
             if (_base_port == BASE_PORT) {
                 _base_port += _instance * 10;
             }
-            if (_rcout_port == RCOUT_PORT) {
-                _rcout_port += _instance * 10;
-            }
             if (_rcin_port == RCIN_PORT) {
                 _rcin_port += _instance * 10;
             }
             if (_fg_view_port == FG_VIEW_PORT) {
                 _fg_view_port += _instance * 10;
             }
-            if (_simulator_port_in == SIM_IN_PORT) {
-                _simulator_port_in += _instance * 10;
+            if (simulator_port_in == SIM_IN_PORT) {
+                simulator_port_in += _instance * 10;
             }
-            if (_simulator_port_out == SIM_OUT_PORT) {
-                _simulator_port_out += _instance * 10;
+            if (simulator_port_out == SIM_OUT_PORT) {
+                simulator_port_out += _instance * 10;
             }
             if (_irlock_port == IRLOCK_PORT) {
                 _irlock_port += _instance * 10;
@@ -281,10 +300,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
             model_str = gopt.optarg;
             break;
         case 'F':
-            _fdm_address = gopt.optarg;
-            break;
-        case CMDLINE_CLIENT:
-            _client_address = gopt.optarg;
+            _fg_address = gopt.optarg;
             break;
         case CMDLINE_GIMBAL:
             enable_gimbal = true;
@@ -304,6 +320,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         case CMDLINE_UARTD:
         case CMDLINE_UARTE:
         case CMDLINE_UARTF:
+        case CMDLINE_UARTG:
             _uart_path[opt - CMDLINE_UARTA] = gopt.optarg;
             break;
         case CMDLINE_RTSCTS:
@@ -315,17 +332,14 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         case CMDLINE_RCIN_PORT:
             _rcin_port = atoi(gopt.optarg);
             break;
-        case CMDLINE_RCOUT_PORT:
-            _rcout_port = atoi(gopt.optarg);
-            break;
         case CMDLINE_SIM_ADDRESS:
-            _simulator_address = gopt.optarg;
+            simulator_address = gopt.optarg;
             break;
         case CMDLINE_SIM_PORT_IN:
-            _simulator_port_in = atoi(gopt.optarg);
+            simulator_port_in = atoi(gopt.optarg);
             break;
         case CMDLINE_SIM_PORT_OUT:
-            _simulator_port_out = atoi(gopt.optarg);
+            simulator_port_out = atoi(gopt.optarg);
             break;
         case CMDLINE_IRLOCK_PORT:
             _irlock_port = atoi(gopt.optarg);
@@ -345,7 +359,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         if (strncasecmp(model_constructors[i].name, model_str, strlen(model_constructors[i].name)) == 0) {
             printf("Creating model %s at speed %.1f\n", model_str, speedup);
             sitl_model = model_constructors[i].constructor(home_str, model_str);
-            sitl_model->set_interface_ports(_simulator_address, _simulator_port_in, _simulator_port_out);
+            sitl_model->set_interface_ports(simulator_address, simulator_port_in, simulator_port_out);
             sitl_model->set_speedup(speedup);
             sitl_model->set_instance(_instance);
             sitl_model->set_autotest_dir(autotest_dir);

@@ -28,6 +28,24 @@ class VehicleInfo(object):
                 # param fetch happens asynchronously
                 "extra_mavlink_cmds": "param fetch frame; param set FRAME 1;",
             },
+            "bfx": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter.parm",
+                                            "default_params/copter-bfx.parm" ],
+            },
+            "djix": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter.parm",
+                                            "default_params/copter-djix.parm" ],
+            },
+            "cwx": {
+                "make_target": "sitl",
+                "waf_target": "bin/arducopter",
+                "default_params_filename": ["default_params/copter.parm",
+                                            "default_params/copter-cwx.parm" ],
+            },
             "hexa": {
                 "make_target": "sitl",
                 "waf_target": "bin/arducopter",
@@ -155,6 +173,10 @@ class VehicleInfo(object):
                 "waf_target": "bin/arduplane",
                 "default_params_filename": "default_params/plane-tailsitter.parm",
             },
+            "plane-jet": {
+                "waf_target": "bin/arduplane",
+                "default_params_filename": ["default_params/plane.parm", "default_params/plane-jet.parm"],
+            },
             "plane": {
                 "waf_target": "bin/arduplane",
                 "default_params_filename": "default_params/plane.parm",
@@ -194,6 +216,17 @@ class VehicleInfo(object):
                 "waf_target": "bin/ardurover",
                 "default_params_filename": ["default_params/rover.parm",
                                             "default_params/rover-skid.parm"],
+            },
+            "balancebot": {
+                "waf_target": "bin/ardurover",
+                "default_params_filename": ["default_params/rover.parm",
+                                            "default_params/rover-skid.parm",
+                                            "default_params/balancebot.parm"],
+            },
+            "sailboat": {
+                "waf_target": "bin/ardurover",
+                "default_params_filename": ["default_params/rover.parm",
+                                            "default_params/sailboat.parm"],
             },
             "gazebo-rover": {
                 "waf_target": "bin/ardurover",

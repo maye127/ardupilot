@@ -91,28 +91,30 @@ void Sub::transform_manual_control_to_rc_override(int16_t x, int16_t y, int16_t 
         rollTrim  =  y * rpyScale;
     }
 
-    RC_Channels::set_override(0, constrain_int16(pitchTrim + rpyCenter,1100,1900)); // pitch
-    RC_Channels::set_override(1, constrain_int16(rollTrim  + rpyCenter,1100,1900)); // roll
+    uint32_t tnow = AP_HAL::millis();
 
-    RC_Channels::set_override(2, constrain_int16((z+zTrim)*throttleScale+throttleBase,1100,1900)); // throttle
-    RC_Channels::set_override(3, constrain_int16(r*rpyScale+rpyCenter,1100,1900));                 // yaw
+    RC_Channels::set_override(0, constrain_int16(pitchTrim + rpyCenter,1100,1900), tnow); // pitch
+    RC_Channels::set_override(1, constrain_int16(rollTrim  + rpyCenter,1100,1900), tnow); // roll
+
+    RC_Channels::set_override(2, constrain_int16((z+zTrim)*throttleScale+throttleBase,1100,1900), tnow); // throttle
+    RC_Channels::set_override(3, constrain_int16(r*rpyScale+rpyCenter,1100,1900), tnow);                 // yaw
 
     // maneuver mode:
     if (roll_pitch_flag == 0) {
         // adjust forward and lateral with joystick input instead of roll and pitch
-        RC_Channels::set_override(4, constrain_int16((x+xTrim)*rpyScale+rpyCenter,1100,1900)); // forward for ROV
-        RC_Channels::set_override(5, constrain_int16((y+yTrim)*rpyScale+rpyCenter,1100,1900)); // lateral for ROV
+        RC_Channels::set_override(4, constrain_int16((x+xTrim)*rpyScale+rpyCenter,1100,1900), tnow); // forward for ROV
+        RC_Channels::set_override(5, constrain_int16((y+yTrim)*rpyScale+rpyCenter,1100,1900), tnow); // lateral for ROV
     } else {
         // neutralize forward and lateral input while we are adjusting roll and pitch
-        RC_Channels::set_override(4, constrain_int16(xTrim*rpyScale+rpyCenter,1100,1900)); // forward for ROV
-        RC_Channels::set_override(5, constrain_int16(yTrim*rpyScale+rpyCenter,1100,1900)); // lateral for ROV
+        RC_Channels::set_override(4, constrain_int16(xTrim*rpyScale+rpyCenter,1100,1900), tnow); // forward for ROV
+        RC_Channels::set_override(5, constrain_int16(yTrim*rpyScale+rpyCenter,1100,1900), tnow); // lateral for ROV
     }
 
-    RC_Channels::set_override(6, cam_pan);       // camera pan
-    RC_Channels::set_override(7, cam_tilt);      // camera tilt
-    RC_Channels::set_override(8, lights1);       // lights 1
-    RC_Channels::set_override(9, lights2);       // lights 2
-    RC_Channels::set_override(10, video_switch); // video switch
+    RC_Channels::set_override(6, cam_pan, tnow);       // camera pan
+    RC_Channels::set_override(7, cam_tilt, tnow);      // camera tilt
+    RC_Channels::set_override(8, lights1, tnow);       // lights 1
+    RC_Channels::set_override(9, lights2, tnow);       // lights 2
+    RC_Channels::set_override(10, video_switch, tnow); // video switch
 
     // Store old x, y, z values for use in input hold logic
     x_last = x;
@@ -126,16 +128,16 @@ void Sub::handle_jsbutton_press(uint8_t button, bool shift, bool held)
     switch (get_button(button)->function(shift)) {
     case JSButton::button_function_t::k_arm_toggle:
         if (motors.armed()) {
-            init_disarm_motors();
+            arming.disarm();
         } else {
-            init_arm_motors(true);
+            arming.arm(AP_Arming::Method::MAVLINK);
         }
         break;
     case JSButton::button_function_t::k_arm:
-        init_arm_motors(true);
+        arming.arm(AP_Arming::Method::MAVLINK);
         break;
     case JSButton::button_function_t::k_disarm:
-        init_disarm_motors();
+        arming.disarm();
         break;
 
     case JSButton::button_function_t::k_mode_manual:
@@ -678,13 +680,14 @@ void Sub::default_js_buttons()
 
 void Sub::set_neutral_controls()
 {
+    uint32_t tnow = AP_HAL::millis();
 
     for (uint8_t i = 0; i < 6; i++) {
-        RC_Channels::set_override(i, 1500);
+        RC_Channels::set_override(i, 1500, tnow);
     }
 
     for (uint8_t i = 6; i < 11; i++) {
-        RC_Channels::set_override(i, 0xffff);
+        RC_Channels::set_override(i, 0xffff, tnow);
     }
 
     // Clear pitch/roll trim settings

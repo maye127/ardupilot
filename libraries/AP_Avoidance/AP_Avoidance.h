@@ -195,10 +195,11 @@ private:
     AP_Int8     _warn_time_horizon;
     AP_Float    _warn_distance_xy;
     AP_Float    _warn_distance_z;
+
+    // multi-thread support for avoidance
+    HAL_Semaphore_Recursive _rsem;
 };
 
-float closest_distance_between_radial_and_point(const Vector2f &w,
-                                                const Vector2f &p);
 float closest_approach_xy(const Location &my_loc,
                           const Vector3f &my_vel,
                           const Location &obstacle_loc,

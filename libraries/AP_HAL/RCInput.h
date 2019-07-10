@@ -34,7 +34,10 @@ public:
 
     /* get receiver based RSSI if available. -1 for unknown, 0 for no link, 255 for maximum link */
     virtual int16_t get_rssi(void) { return -1; }
-    
+
+    /* Return string describing method RC input protocol */
+    virtual const char *protocol() const = 0;
+
     /**
      * Overrides: these are really grody and don't belong here but we need
      * them at the moment to make the port work.
@@ -43,11 +46,6 @@ public:
      *  v == 0  -> do not override this channel
      *  v > 0   -> set v as override.
      */
-
-    /* set_override: set just a specific channel */
-    virtual bool set_override(uint8_t channel, int16_t override) = 0;
-    /* clear_overrides: equivalent to setting all overrides to 0 */
-    virtual void clear_overrides() = 0;
 
     /* execute receiver bind */
     virtual bool rc_bind(int dsmMode) { return false; }

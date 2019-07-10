@@ -16,12 +16,14 @@
   handle vehicle <-> GCS communications for terrain library
  */
 
+#include "AP_Terrain.h"
+
+#include <AP_AHRS/AP_AHRS.h>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
 #include <AP_Math/AP_Math.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <GCS_MAVLink/GCS.h>
-#include "AP_Terrain.h"
 
 #if AP_TERRAIN_AVAILABLE
 
@@ -83,7 +85,7 @@ bool AP_Terrain::request_missing(mavlink_channel_t chan, const struct grid_info 
  */
 void AP_Terrain::send_request(mavlink_channel_t chan)
 {
-    if (enable == 0 || !allocate()) {
+    if (!allocate()) {
         // not enabled
         return;
     }
@@ -92,7 +94,7 @@ void AP_Terrain::send_request(mavlink_channel_t chan)
     schedule_disk_io();
 
     Location loc;
-    if (!ahrs.get_position(loc)) {
+    if (!AP::ahrs().get_position(loc)) {
         // we don't know where we are
         return;
     }
@@ -118,9 +120,8 @@ void AP_Terrain::send_request(mavlink_channel_t chan)
     for (int8_t x=-1; x<=1; x++) {
         for (int8_t y=-1; y<=1; y++) {
             Location loc2 = loc;
-            location_offset(loc2, 
-                            x*TERRAIN_GRID_BLOCK_SIZE_X*0.7f*grid_spacing,
-                            y*TERRAIN_GRID_BLOCK_SIZE_Y*0.7f*grid_spacing);
+            loc2.offset(x*TERRAIN_GRID_BLOCK_SIZE_X*0.7f*grid_spacing,
+                        y*TERRAIN_GRID_BLOCK_SIZE_Y*0.7f*grid_spacing);
             struct grid_info info2;
             calculate_grid_info(loc2, info2);            
             if (request_missing(chan, info2)) {
@@ -206,6 +207,7 @@ void AP_Terrain::send_terrain_report(mavlink_channel_t chan, const Location &loc
     float home_terrain_height = 0;
     uint16_t spacing = 0;
     Location current_loc;
+    const AP_AHRS &ahrs = AP::ahrs();
     if (ahrs.get_position(current_loc) &&
         height_amsl(ahrs.get_home(), home_terrain_height, false) &&
         height_amsl(loc, terrain_height, false)) {
@@ -223,7 +225,7 @@ void AP_Terrain::send_terrain_report(mavlink_channel_t chan, const Location &loc
     if (spacing == 0 && !(extrapolate && have_current_loc_height)) {
         current_height = 0;
     } else {
-        if (current_loc.flags.relative_alt) {
+        if (current_loc.relative_alt) {
             current_height = current_loc.alt*0.01f;
         } else {
             current_height = (current_loc.alt - ahrs.get_home().alt)*0.01f;
@@ -300,7 +302,7 @@ void AP_Terrain::handle_terrain_data(mavlink_message_t *msg)
         Location loc2;
         loc2.lat = grid.lat;
         loc2.lng = grid.lon;
-        location_offset(loc2, 28*grid_spacing, 32*grid_spacing);
+        loc2.offset(28*grid_spacing, 32*grid_spacing);
         hal.console->printf("--lat=%12.7f --lon=%12.7f %u\n",
                             loc2.lat*1.0e-7f,
                             loc2.lng*1.0e-7f,
